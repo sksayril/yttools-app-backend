@@ -364,7 +364,7 @@ const generateTagsAndKeywords = async (keywords) => {
 
     // Make request to Gemini 1.5 Pro API
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${GEMINI_API_KEY}`,
       requestData,
       { headers: { "Content-Type": "application/json" } }
     );
@@ -443,7 +443,7 @@ const generateViralTitles = async (keywords) => {
 
     // Make request to Gemini 1.5 Pro API
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${GEMINI_API_KEY}`,
       requestData,
       { headers: { "Content-Type": "application/json" } }
     );
@@ -516,7 +516,7 @@ const generateVideoDescription = async (videoDetails) => {
 
     // Make request to Gemini 1.5 Pro API
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${GEMINI_API_KEY}`,
       requestData,
       { headers: { "Content-Type": "application/json" } }
     );
@@ -556,6 +556,7 @@ router.post("/generateVideoDescription", async (req, res) => {
     return res.status(500).json({ message: "Internal Server Error" });
   }
 });
+
 
 
 module.exports = router;
