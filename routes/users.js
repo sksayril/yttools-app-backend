@@ -57,10 +57,7 @@ router.post("/getVideoDetails", async (req, res) => {
     const keywords = description
       ? description.match(/\b\w+\b/g).slice(0, 10)
       : tags || [];
-
-    return res.status(200).json({
-      message: "Video details fetched successfully",
-      videoId,
+    let data = [{videoId,
       title,
       description,
       tags: tags || [],
@@ -77,7 +74,11 @@ router.post("/getVideoDetails", async (req, res) => {
         comments: commentCount || "N/A",
       },
       liveWatching,
-      comments,
+      comments}]
+
+    return res.status(200).json({
+      message: "Video details fetched successfully",
+      data
     });
   } catch (error) {
     console.error("Error fetching video details:", error);
