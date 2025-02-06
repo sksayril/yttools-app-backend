@@ -653,4 +653,161 @@ router.post("/ai/deepseek/generateAITags", async (req, res) => {
 });
 
 
+
+//POPULAR KEYWORDS
+
+router.post("/getTopKeywords", async (req, res) => {
+  try {
+    const { searchQuery, regionCode } = req.body;
+
+    if (!searchQuery) {
+      return res.status(400).json({ message: "Search query is required" });
+    }
+
+    if (!regionCode) {
+      return res.status(400).json({ message: "Region code is required (Example: 'US', 'IN', 'GB')." });
+    }
+
+    // Search for top 50 videos to gather a broader range of keywords
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=50&q=${encodeURIComponent(
+      searchQuery
+    )}&order=viewCount&type=video&regionCode=${regionCode}&key=${YOUTUBE_API_KEY}`;
+
+    const searchResponse = await axios.get(searchUrl);
+    const searchResults = searchResponse.data.items;
+
+    if (!searchResults || searchResults.length === 0) {
+      return res.status(404).json({ message: "No videos found for the specified region." });
+    }
+
+    // Fetch detailed video stats for each video
+    const videoIds = searchResults.map((video) => video.id.videoId).join(",");
+    const videoDetailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+    const videoDetailsResponse = await axios.get(videoDetailsUrl);
+    const videoDetails = videoDetailsResponse.data.items;
+
+    let keywordCount = {};
+
+    // Extracting keywords from video titles and tags
+    videoDetails.forEach((video) => {
+      const { title, tags } = video.snippet;
+
+      // Extract keywords from title (first 10 words)
+      const titleKeywords = title.match(/\b\w+\b/g)?.slice(0, 10) || [];
+
+      // Extract keywords from tags if available
+      const tagKeywords = tags || [];
+
+      // Combine all keywords
+      const allKeywords = [...titleKeywords, ...tagKeywords];
+
+      // Count occurrences of each keyword
+      allKeywords.forEach((word) => {
+        const lowerCaseWord = word.toLowerCase();
+        keywordCount[lowerCaseWord] = (keywordCount[lowerCaseWord] || 0) + 1;
+      });
+    });
+
+    // Convert keyword count object to sorted array (descending order)
+    const sortedKeywords = Object.entries(keywordCount)
+      .sort((a, b) => b[1] - a[1]) // Sort by frequency
+      .slice(0, 20) // Take top 20
+      .map((entry) => entry[0]); // Extract keyword names
+
+    return res.status(200).json({
+      message: `Top 20 popular keywords for "${searchQuery}" in region "${regionCode}"`,
+      keywords: sortedKeywords,
+    });
+  } catch (error) {
+    console.error("Error fetching popular keywords:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+// Define categories and subcategories
+const categoryData = {
+  Festival: ["Diwali", "Dussehra", "Holi", "Christmas", "Eid", "NewYear"],
+  Work: ["Office", "RemoteWork", "Startups"],
+  Fitness: ["Gym", "Yoga", "Running"],
+  Music: ["Classical", "Pop", "Rock"],
+  Photography: ["Portrait", "Nature", "Travel"],
+  Gaming: ["PCGaming", "ConsoleGaming", "MobileGaming"],
+  Animals: ["Dogs", "Cats", "Wildlife"],
+  Travel: ["Mountains", "Beaches", "Cities"],
+  SocialMedia: ["Influencer", "Memes", "Challenges"],
+  Food: ["Vegan", "Desserts", "StreetFood"]
+};
+
+router.post("/getPopularHashtagsFromYouTube", async (req, res) => {
+  try {
+    const { category, regionCode } = req.body;
+
+    if (!category || !categoryData[category]) {
+      return res.status(400).json({ message: "Valid category is required." });
+    }
+
+    if (!regionCode) {
+      return res.status(400).json({ message: "Region code is required (Example: 'US', 'IN', 'GB')." });
+    }
+
+    const subcategories = categoryData[category];
+    let categoryHashtags = {};
+
+    // Fetch hashtags for each subcategory
+    for (const subcategory of subcategories) {
+      const searchQuery = `${category} ${subcategory}`;
+      console.log(`Fetching hashtags for: ${searchQuery}`);
+
+      // Search YouTube for videos related to the subcategory
+      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=${encodeURIComponent(
+        searchQuery
+      )}&order=viewCount&type=video&regionCode=${regionCode}&key=${YOUTUBE_API_KEY}`;
+
+      const searchResponse = await axios.get(searchUrl);
+      const searchResults = searchResponse.data.items;
+
+      if (!searchResults || searchResults.length === 0) {
+        categoryHashtags[subcategory] = ["No hashtags found"];
+        continue;
+      }
+
+      // Extract video IDs
+      const videoIds = searchResults.map((video) => video.id.videoId).join(",");
+
+      // Fetch video details (including tags and descriptions)
+      const videoDetailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+      const videoDetailsResponse = await axios.get(videoDetailsUrl);
+      const videoDetails = videoDetailsResponse.data.items;
+
+      let hashtagSet = new Set();
+
+      // Extract hashtags from video titles, descriptions, and tags
+      videoDetails.forEach((video) => {
+        const { title, description, tags } = video.snippet;
+
+        // Extract hashtags from title and description
+        const titleHashtags = title.match(/#[a-zA-Z0-9_]+/g) || [];
+        const descHashtags = description.match(/#[a-zA-Z0-9_]+/g) || [];
+        const tagHashtags = tags || [];
+
+        // Add hashtags to the set (remove duplicates)
+        [...titleHashtags, ...descHashtags, ...tagHashtags].forEach((tag) => {
+          hashtagSet.add(tag.toLowerCase());
+        });
+      });
+
+      // Convert to array and limit to top 20 hashtags
+      categoryHashtags[subcategory] = Array.from(hashtagSet).slice(0, 20);
+    }
+
+    return res.status(200).json({
+      category,
+      hashtags: categoryHashtags,
+    });
+  } catch (error) {
+    console.error("Error fetching hashtags:", error);
+    return res.status(500).json({ message: "Internal Server Error." });
+  }
+});
+
 module.exports = router;
