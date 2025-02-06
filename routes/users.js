@@ -713,10 +713,10 @@ router.post("/getTopKeywords", async (req, res) => {
       .sort((a, b) => b[1] - a[1]) // Sort by frequency
       .slice(0, 20) // Take top 20
       .map((entry) => entry[0]); // Extract keyword names
-
+    let data = [{keywords: sortedKeywords,}]
     return res.status(200).json({
       message: `Top 20 popular keywords for "${searchQuery}" in region "${regionCode}"`,
-      keywords: sortedKeywords,
+      data
     });
   } catch (error) {
     console.error("Error fetching popular keywords:", error);
@@ -799,10 +799,11 @@ router.post("/getPopularHashtagsFromYouTube", async (req, res) => {
       // Convert to array and limit to top 20 hashtags
       categoryHashtags[subcategory] = Array.from(hashtagSet).slice(0, 20);
     }
-
+    let data = [{category,
+      hashtags: categoryHashtags,}]
     return res.status(200).json({
-      category,
-      hashtags: categoryHashtags,
+      message:"Data Successfully Fetch",
+      data
     });
   } catch (error) {
     console.error("Error fetching hashtags:", error);
