@@ -159,22 +159,38 @@ router.post("/getCompetitorVideos", async (req, res) => {
 
 
 
+
 const extractChannelId = async (channelUrl) => {
-  if (!channelUrl.includes("channel/") && !channelUrl.includes("user/")) {
+  if (!channelUrl.includes("channel/") && !channelUrl.includes("user/") && !channelUrl.includes("@")) {
     return null;
   }
 
+  // Extract Channel ID from /channel/ URLs
   if (channelUrl.includes("channel/")) {
     return channelUrl.split("channel/")[1].split("?")[0];
   }
 
-  // If URL contains "user/", resolve to Channel ID
-  const username = channelUrl.split("user/")[1].split("?")[0];
-  const response = await axios.get(
-    `https://www.googleapis.com/youtube/v3/channels?part=id&forUsername=${username}&key=${YOUTUBE_API_KEY}`
-  );
-  return response.data.items.length ? response.data.items[0].id : null;
+  // Extract username from /user/ URLs
+  if (channelUrl.includes("user/")) {
+    const username = channelUrl.split("user/")[1].split("?")[0];
+    const response = await axios.get(
+      `https://www.googleapis.com/youtube/v3/channels?part=id&forUsername=${username}&key=${YOUTUBE_API_KEY}`
+    );
+    return response.data.items.length ? response.data.items[0].id : null;
+  }
+
+  // Handle @username format (New YouTube Handle System)
+  if (channelUrl.includes("@")) {
+    const handle = channelUrl.split("youtube.com/")[1].split("?")[0];
+    const response = await axios.get(
+      `https://www.googleapis.com/youtube/v3/channels?part=id&forHandle=${handle}&key=${YOUTUBE_API_KEY}`
+    );
+    return response.data.items.length ? response.data.items[0].id : null;
+  }
+
+  return null;
 };
+
 
 // API to fetch YouTube Channel Full Data
 router.post("/getChannelFullData", async (req, res) => {
@@ -318,11 +334,13 @@ router.post("/generateTags", async (req, res) => {
     }
 
     const generatedTags = await generateTags(keywords);
-
+    let data = [{
+      keywords,
+      generatedTags
+    }]
     return res.status(200).json({
       message: "Tags generated successfully",
-      keywords,
-      generatedTags,
+      data
     });
   } catch (error) {
     console.error("Error generating tags:", error);
@@ -395,11 +413,13 @@ router.post("/generateAITags", async (req, res) => {
     }
 
     const generatedTags = await generateTagsAndKeywords(keywords);
-
+    let data = [{
+      keywords,
+      generatedTags
+    }]
     return res.status(200).json({
       message: "AI-generated tags and keywords",
-      keywords,
-      generatedTags,
+      data
     });
   } catch (error) {
     console.error("Error generating AI tags:", error);
@@ -474,11 +494,13 @@ router.post("/generateViralTitles", async (req, res) => {
     }
 
     const viralTitles = await generateViralTitles(keywords);
-
+    let data = [{
+      keywords,
+      viralTitles
+    }]
     return res.status(200).json({
       message: "AI-generated viral video titles",
-      keywords,
-      viralTitles,
+      data
     });
   } catch (error) {
     console.error("Error generating AI titles:", error);
@@ -558,6 +580,76 @@ router.post("/generateVideoDescription", async (req, res) => {
   }
 });
 
+
+
+
+
+const AI_API_URL = "http://103.39.135.30:11434/api/generate"; // DeepSeek API URL
+
+// Function to clean and parse AI responses
+const cleanAIResponseOllama = (text) => {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    return text.split("\n").map((tag) => tag.trim()).filter((tag) => tag.length > 0);
+  }
+};
+
+// Function to generate YouTube tags using DeepSeek API
+const generateTagsAndKeywordsOllama = async (keywords) => {
+  try {
+    // Construct the prompt
+    const promptText = `You are an expert in YouTube SEO. Based on these keywords: ${keywords.join(", ")}.
+      Generate the top 10 most trending and relevant YouTube video tags.
+      Ensure they are optimized for YouTube search and video discovery.
+      Return the tags in JSON format as an array, without any extra text.`;
+
+    // Request payload for DeepSeek API (Streaming Disabled)
+    const requestData = {
+      model: "deepseek-r1:14b",
+      prompt: promptText,
+      stream: false // Disabled Streaming
+    };
+
+    // Make a synchronous API request (Full Response)
+    const response = await axios.post(AI_API_URL, requestData, { headers: { "Content-Type": "application/json" } });
+    console.log(response)
+    // Extract AI response content
+    const aiResponse = response.data?.content || "";
+    console.log("Raw AI Response:", aiResponse); // Debugging
+
+    // Clean and parse AI response
+    const generatedTags = cleanAIResponseOllama(aiResponse);
+
+    // Ensure only top 10 tags
+    return generatedTags.slice(0, 10);
+  } catch (error) {
+    console.error("Error fetching AI-generated tags:", error.message);
+    return [];
+  }
+};
+
+// API Endpoint to Generate Tags Using DeepSeek AI
+router.post("/ai/deepseek/generateAITags", async (req, res) => {
+  try {
+    const { keywords } = req.body;
+
+    if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+      return res.status(400).json({ message: "Please provide an array of keywords" });
+    }
+
+    const generatedTags = await generateTagsAndKeywordsOllama(keywords);
+
+    return res.status(200).json({
+      message: "AI-generated tags and keywords",
+      keywords,
+      generatedTags,
+    });
+  } catch (error) {
+    console.error("Error generating AI tags:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+});
 
 
 module.exports = router;
