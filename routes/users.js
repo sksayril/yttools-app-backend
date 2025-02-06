@@ -144,10 +144,10 @@ router.post("/getCompetitorVideos", async (req, res) => {
         // },
       };
     });
-
+    let data =[{videos}]
     return res.status(200).json({
       message: `Top 10 videos for "${searchQuery}" in region "${regionCode}"`,
-      videos,
+      data
     });
   } catch (error) {
     console.error("Error fetching competitor videos:", error);
@@ -257,30 +257,31 @@ router.post("/getChannelFullData", async (req, res) => {
         return { ...playlist, videos };
       })
     );
+    let data = [{channel: {
+      id: channelId,
+      title,
+      description,
+      customUrl,
+      publishedAt,
+      keywords,
+      thumbnails,
+      bannerUrl,
+      statistics: {
+        subscribers: subscriberCount,
+        views: viewCount,
+        videos: videoCount,
+        estimatedEarnings: {
+          min: `$${minEarnings}`,
+          max: `$${maxEarnings}`,
+        },
+      },
+    },
+    topVideos: videos,
+    playlists: playlistsWithVideos,}]
 
     return res.status(200).json({
       message: "YouTube Channel Full Data Fetched Successfully",
-      channel: {
-        id: channelId,
-        title,
-        description,
-        customUrl,
-        publishedAt,
-        keywords,
-        thumbnails,
-        bannerUrl,
-        statistics: {
-          subscribers: subscriberCount,
-          views: viewCount,
-          videos: videoCount,
-          estimatedEarnings: {
-            min: `$${minEarnings}`,
-            max: `$${maxEarnings}`,
-          },
-        },
-      },
-      topVideos: videos,
-      playlists: playlistsWithVideos,
+      data
     });
   } catch (error) {
     console.error("Error fetching YouTube channel full data:", error);
