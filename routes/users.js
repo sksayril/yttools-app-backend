@@ -890,7 +890,7 @@ router.get("/getVideoDetailsID", async (req, res) => {
 
     return res.status(200).json({
       message: `Video details for ID: ${videoId}`,
-      data: videoDetails,
+      data: [videoDetails],
     });
   } catch (error) {
     console.error("Error fetching video details:", error);
@@ -898,18 +898,13 @@ router.get("/getVideoDetailsID", async (req, res) => {
   }
 });
 
+
 router.post("/checkVideoRank", async (req, res) => {
   try {
     const { videoUrl, keyword, regionCode } = req.body;
 
-    if (!videoUrl) {
-      return res.status(400).json({ message: "Video URL is required." });
-    }
-    if (!keyword) {
-      return res.status(400).json({ message: "Keyword is required." });
-    }
-    if (!regionCode) {
-      return res.status(400).json({ message: "Region code is required (Example: 'US', 'IN', 'GB')." });
+    if (!videoUrl || !keyword || !regionCode) {
+      return res.status(400).json({ message: "Video URL, Keyword, and Region Code are required." });
     }
 
     // Extract videoId from the video URL
@@ -920,10 +915,8 @@ router.post("/checkVideoRank", async (req, res) => {
     const videoId = videoIdMatch[1];
 
     // Search YouTube for the given keyword in the specified region
-    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=50&q=${encodeURIComponent(
-      keyword
-    )}&regionCode=${regionCode}&type=video&key=${YOUTUBE_API_KEY}`;
-
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=50&q=${encodeURIComponent(keyword)}&regionCode=${regionCode}&type=video&key=${YOUTUBE_API_KEY}`;
+    
     const searchResponse = await axios.get(searchUrl);
     const searchResults = searchResponse.data.items;
 
@@ -939,24 +932,35 @@ router.post("/checkVideoRank", async (req, res) => {
       }
     });
 
-    if (rank === -1) {
-      return res.status(200).json({
-        message: `The video is not in the top 50 results for keyword "${keyword}" in region "${regionCode}".`,
-        rank: "Not in top 50",
-      });
+    // Fetch video details
+    const videoDetailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${videoId}&key=${YOUTUBE_API_KEY}`;
+    const videoDetailsResponse = await axios.get(videoDetailsUrl);
+    const videoData = videoDetailsResponse.data.items[0];
+
+    if (!videoData) {
+      return res.status(404).json({ message: "Video details not found." });
     }
 
+    const { title, thumbnails, tags } = videoData.snippet;
+    const { viewCount, likeCount, commentCount } = videoData.statistics;
+    let data = [{videoId,
+      rank: rank === -1 ? "Not in top 50" : rank,
+      title,
+      thumbnail: thumbnails.high.url,
+      views: viewCount,
+      likes: likeCount,
+      comments: commentCount,
+      // hashtags: tags ? tags.filter(tag => tag.startsWith("#")) : [],
+      keywords: tags || [],}]
     return res.status(200).json({
       message: `Video rank for keyword "${keyword}" in region "${regionCode}".`,
-      videoId,
-      rank,
+      data
     });
   } catch (error) {
     console.error("Error checking video rank:", error);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 });
-
 router.post("/calculateEarnings", async (req, res) => {
   try {
     let { views, cpm, monetizationRate } = req.body;
@@ -975,15 +979,15 @@ router.post("/calculateEarnings", async (req, res) => {
 
     // Calculate estimated earnings
     const earnings = ((views * monetizationRate) / 1000) * cpm;
-
+    
     return res.status(200).json({
       message: "Estimated YouTube earnings calculated successfully.",
-      data: {
+      data: [{
         views,
         cpm,
         monetizationRate,
         estimatedEarnings: `$${earnings.toFixed(2)}`
-      }
+      }]
     });
   } catch (error) {
     console.error("Error calculating earnings:", error);
