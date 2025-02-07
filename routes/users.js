@@ -811,4 +811,183 @@ router.post("/getPopularHashtagsFromYouTube", async (req, res) => {
   }
 });
 
+
+//Trending Videos
+
+router.get("/getTrendingVideos", async (req, res) => {
+  try {
+    const { regionCode } = req.query;
+
+    if (!regionCode) {
+      return res.status(400).json({ message: "Region code is required (Example: 'US', 'IN', 'GB')." });
+    }
+
+    // Fetch top 50 trending videos in the specified region
+    const trendingUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&chart=mostPopular&maxResults=50&regionCode=${regionCode}&key=${YOUTUBE_API_KEY}`;
+
+    const response = await axios.get(trendingUrl);
+    const videos = response.data.items;
+
+    if (!videos || videos.length === 0) {
+      return res.status(404).json({ message: "No trending videos found for the specified region." });
+    }
+
+    // Format response data
+    const trendingVideos = videos.map((video) => ({
+      videoId: video.id,
+      title: video.snippet.title,
+      description: video.snippet.description,
+      channelTitle: video.snippet.channelTitle,
+      publishedAt: video.snippet.publishedAt,
+      thumbnail: video.snippet.thumbnails.high.url,
+      viewCount: video.statistics.viewCount || "N/A",
+      likeCount: video.statistics.likeCount || "N/A",
+      commentCount: video.statistics.commentCount || "N/A",
+    }));
+
+    return res.status(200).json({
+      message: `Top 50 trending videos in region "${regionCode}"`,
+      data: trendingVideos,
+    });
+  } catch (error) {
+    console.error("Error fetching trending videos:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+router.get("/getVideoDetailsID", async (req, res) => {
+  try {
+    const { videoId } = req.query;
+
+    if (!videoId) {
+      return res.status(400).json({ message: "Video ID is required." });
+    }
+
+    // Fetch detailed video information
+    const videoDetailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`;
+
+    const response = await axios.get(videoDetailsUrl);
+    const videoData = response.data.items;
+
+    if (!videoData || videoData.length === 0) {
+      return res.status(404).json({ message: "No video found for the given ID." });
+    }
+
+    const video = videoData[0];
+
+    // Format the response data
+    const videoDetails = {
+      videoId: video.id,
+      title: video.snippet.title,
+      description: video.snippet.description,
+      channelTitle: video.snippet.channelTitle,
+      publishedAt: video.snippet.publishedAt,
+      duration: video.contentDetails.duration, // ISO 8601 duration format (e.g., PT10M30S)
+      thumbnails: video.snippet.thumbnails,
+      viewCount: video.statistics.viewCount || "N/A",
+      likeCount: video.statistics.likeCount || "N/A",
+      commentCount: video.statistics.commentCount || "N/A",
+    };
+
+    return res.status(200).json({
+      message: `Video details for ID: ${videoId}`,
+      data: videoDetails,
+    });
+  } catch (error) {
+    console.error("Error fetching video details:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+router.post("/checkVideoRank", async (req, res) => {
+  try {
+    const { videoUrl, keyword, regionCode } = req.body;
+
+    if (!videoUrl) {
+      return res.status(400).json({ message: "Video URL is required." });
+    }
+    if (!keyword) {
+      return res.status(400).json({ message: "Keyword is required." });
+    }
+    if (!regionCode) {
+      return res.status(400).json({ message: "Region code is required (Example: 'US', 'IN', 'GB')." });
+    }
+
+    // Extract videoId from the video URL
+    const videoIdMatch = videoUrl.match(/(?:v=|\/)([0-9A-Za-z_-]{11})/);
+    if (!videoIdMatch || videoIdMatch.length < 2) {
+      return res.status(400).json({ message: "Invalid YouTube video URL." });
+    }
+    const videoId = videoIdMatch[1];
+
+    // Search YouTube for the given keyword in the specified region
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=50&q=${encodeURIComponent(
+      keyword
+    )}&regionCode=${regionCode}&type=video&key=${YOUTUBE_API_KEY}`;
+
+    const searchResponse = await axios.get(searchUrl);
+    const searchResults = searchResponse.data.items;
+
+    if (!searchResults || searchResults.length === 0) {
+      return res.status(404).json({ message: "No videos found for the given keyword in the specified region." });
+    }
+
+    // Find the ranking position of the provided video
+    let rank = -1;
+    searchResults.forEach((video, index) => {
+      if (video.id.videoId === videoId) {
+        rank = index + 1; // Rank starts from 1
+      }
+    });
+
+    if (rank === -1) {
+      return res.status(200).json({
+        message: `The video is not in the top 50 results for keyword "${keyword}" in region "${regionCode}".`,
+        rank: "Not in top 50",
+      });
+    }
+
+    return res.status(200).json({
+      message: `Video rank for keyword "${keyword}" in region "${regionCode}".`,
+      videoId,
+      rank,
+    });
+  } catch (error) {
+    console.error("Error checking video rank:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+router.post("/calculateEarnings", async (req, res) => {
+  try {
+    let { views, cpm, monetizationRate } = req.body;
+
+    if (!views || isNaN(views) || views < 0) {
+      return res.status(400).json({ message: "Invalid views count. Must be a positive number." });
+    }
+
+    if (!cpm || isNaN(cpm) || cpm <= 0) {
+      cpm = 5; // Default CPM ($5 per 1000 views)
+    }
+
+    if (!monetizationRate || isNaN(monetizationRate) || monetizationRate <= 0 || monetizationRate > 100) {
+      monetizationRate = 50; // Default 50% of views are monetized
+    }
+
+    // Calculate estimated earnings
+    const earnings = ((views * monetizationRate) / 1000) * cpm;
+
+    return res.status(200).json({
+      message: "Estimated YouTube earnings calculated successfully.",
+      data: {
+        views,
+        cpm,
+        monetizationRate,
+        estimatedEarnings: `$${earnings.toFixed(2)}`
+      }
+    });
+  } catch (error) {
+    console.error("Error calculating earnings:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+});
 module.exports = router;
