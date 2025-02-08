@@ -994,4 +994,70 @@ router.post("/calculateEarnings", async (req, res) => {
     return res.status(500).json({ message: "Internal Server Error" });
   }
 });
+
+
+
+const generateChannelNames = async (videoDetails) => {
+  try {
+    // Create a prompt for Gemini AI to generate 10 YouTube channel name ideas
+    const promptText = `
+      You are an expert in YouTube branding and content creation.
+      Based on the following short video details: "${videoDetails}",
+      generate a **list of 10 creative and unique YouTube channel name ideas**.
+      Ensure the names are:
+      - **Catchy, easy to remember, and SEO-friendly.**
+      - **Relevant to the content theme and target audience.**
+      - **Diverse in style (e.g., playful, professional, trendy, niche-specific).**
+
+      Return the list **in plain text format**, with each name on a new line.
+    `;
+
+    // API request to Gemini AI
+    const requestData = {
+      contents: [{ parts: [{ text: promptText }] }]
+    };
+
+    // Make request to Gemini 1.5 Pro API
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${GEMINI_API_KEY}`,
+      requestData,
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    // Extract AI response
+    const aiResponse = response.data.candidates[0].content.parts[0].text.trim();
+
+    // Convert AI response into an array (splitting by new lines)
+    const channelNames = aiResponse.split("\n").map(name => name.trim()).filter(name => name.length > 0);
+
+    // Ensure only 10 results are returned
+    return channelNames.slice(0, 10);
+  } catch (error) {
+    console.error("Error fetching AI-generated channel names:", error.response?.data || error.message);
+    return ["Error generating channel names."];
+  }
+};
+
+// API Endpoint to Generate Top 10 YouTube Channel Names
+router.post("/generateChannelNames", async (req, res) => {
+  try {
+    const { videoDetails } = req.body;
+
+    if (!videoDetails || typeof videoDetails !== "string" || videoDetails.length === 0) {
+      return res.status(400).json({ message: "Please provide short details about the video." });
+    }
+
+    const generatedChannelNames = await generateChannelNames(videoDetails);
+
+    return res.status(200).json({
+      message: "AI-generated YouTube channel name ideas",
+      videoDetails,
+      generatedChannelNames
+    });
+  } catch (error) {
+    console.error("Error generating AI channel names:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
 module.exports = router;
