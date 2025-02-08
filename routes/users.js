@@ -1048,11 +1048,11 @@ router.post("/generateChannelNames", async (req, res) => {
     }
 
     const generatedChannelNames = await generateChannelNames(videoDetails);
-
+    let data =[{videoDetails,
+      generatedChannelNames}]
     return res.status(200).json({
       message: "AI-generated YouTube channel name ideas",
-      videoDetails,
-      generatedChannelNames
+      data
     });
   } catch (error) {
     console.error("Error generating AI channel names:", error);
