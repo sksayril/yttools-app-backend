@@ -1188,6 +1188,20 @@ const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 //   }
 // });
 
+const getGlobalRanking = async (channelId, country) => {
+  try {
+      // Replace with actual API or logic to get ranks
+      let globalViewsRank = Math.floor(Math.random() * 1000) + 1; // Mocked data
+      let globalSubscribersRank = Math.floor(Math.random() * 5000) + 1; // Mocked data
+      let countryRank = Math.floor(Math.random() * 1000) + 1; // Mocked data for the country
+
+      return { globalViewsRank, globalSubscribersRank, countryRank };
+  } catch (error) {
+      console.error("Error fetching global ranking:", error);
+      return { globalViewsRank: "N/A", globalSubscribersRank: "N/A", countryRank: "N/A" };
+  }
+};
+
 const getChannelAndVideosData = async (query) => {
   try {
       let url = `${YOUTUBE_API_BASE}/search?part=snippet&type=channel&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
@@ -1196,13 +1210,15 @@ const getChannelAndVideosData = async (query) => {
       if (!response.data.items.length) return null;
 
       let channelId = response.data.items[0].id.channelId;
-      let channelUrl = `${YOUTUBE_API_BASE}/channels?part=snippet,statistics&id=${channelId}&key=${YOUTUBE_API_KEY}`;
+      let channelUrl = `${YOUTUBE_API_BASE}/channels?part=snippet,statistics,brandingSettings&id=${channelId}&key=${YOUTUBE_API_KEY}`;
       let videosUrl = `${YOUTUBE_API_BASE}/search?part=snippet&channelId=${channelId}&maxResults=50&order=date&type=video&key=${YOUTUBE_API_KEY}`;
+
       let [channelResponse, videosResponse] = await Promise.all([axios.get(channelUrl), axios.get(videosUrl)]);
 
       if (!channelResponse.data.items.length || !videosResponse.data.items.length) return null;
 
       let channel = channelResponse.data.items[0];
+      let country = channel.brandingSettings?.channel?.country || "Unknown";
       let videos = videosResponse.data.items.map(item => ({
           videoId: item.id.videoId,
           title: item.snippet.title,
@@ -1233,15 +1249,21 @@ const getChannelAndVideosData = async (query) => {
       let totalMinEarnings = videos.reduce((acc, video) => acc + video.minEarnings, 0);
       let totalMaxEarnings = videos.reduce((acc, video) => acc + video.maxEarnings, 0);
 
+      let ranking = await getGlobalRanking(channelId, country);
+
       return {
           channel: {
               channelId,
               title: channel.snippet.title,
               logo: channel.snippet.thumbnails.high.url,
+              country,
               totalViews: parseInt(channel.statistics.viewCount || 0),
               totalSubscribers: parseInt(channel.statistics.subscriberCount || 0),
               estimatedMonthlyEarnings: `$${(channel.statistics.viewCount * 0.002).toFixed(2)} - $${(channel.statistics.viewCount * 0.005).toFixed(2)}`,
-              estimatedYearlyEarnings: `$${(channel.statistics.viewCount * 0.024).toFixed(2)} - $${(channel.statistics.viewCount * 0.06).toFixed(2)}`
+              estimatedYearlyEarnings: `$${(channel.statistics.viewCount * 0.024).toFixed(2)} - $${(channel.statistics.viewCount * 0.06).toFixed(2)}`,
+              globalViewsRank: ranking.globalViewsRank,
+              globalSubscribersRank: ranking.globalSubscribersRank,
+              countryRank: ranking.countryRank
           },
           totalViews,
           totalLikes,
