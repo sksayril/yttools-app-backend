@@ -1202,16 +1202,17 @@ router.get('/channel', async (req, res) => {
             let growthRate = video.likes / (video.views || 1);
             return growthRate > best.growthRate ? { ...video, growthRate } : best;
         }, { growthRate: 0 });
-
+        let data =[{channelDetails: channel,
+          totalVideos: videos.length,
+          totalViews,
+          totalLikes,
+          maxViewedVideo,
+          minViewedVideo,
+          fastestGrowingVideo,
+          videos,}]
         return res.json({
-            channelDetails: channel,
-            totalVideos: videos.length,
-            totalViews,
-            totalLikes,
-            maxViewedVideo,
-            minViewedVideo,
-            fastestGrowingVideo,
-            videos,
+            message:"Data Fetch Successfully",
+            data
         });
 
     } catch (error) {
