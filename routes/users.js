@@ -1060,4 +1060,167 @@ router.post("/generateChannelNames", async (req, res) => {
   }
 });
 
+const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
+
+
+
+
+// Function to fetch channel details
+const getChannelDetails = async (searchQuery) => {
+    try {
+        let url = `${YOUTUBE_API_BASE}/search?part=snippet&type=channel&q=${encodeURIComponent(searchQuery)}&key=${YOUTUBE_API_KEY}`;
+        const response = await axios.get(url);
+
+        if (response.data.items.length === 0) {
+            return null;
+        }
+
+        let channelId = response.data.items[0].id.channelId;
+
+        // Fetch full channel details
+        let channelUrl = `${YOUTUBE_API_BASE}/channels?part=snippet,statistics&id=${channelId}&key=${YOUTUBE_API_KEY}`;
+        let channelResponse = await axios.get(channelUrl);
+
+        if (channelResponse.data.items.length === 0) {
+            return null;
+        }
+
+        let channel = channelResponse.data.items[0];
+
+        return {
+            channelId,
+            title: channel.snippet.title,
+            description: channel.snippet.description,
+            publishedAt: channel.snippet.publishedAt,
+            profileImage: channel.snippet.thumbnails.high.url,
+            totalViews: parseInt(channel.statistics.viewCount || 0),
+            subscriberCount: parseInt(channel.statistics.subscriberCount || 0),
+            videoCount: parseInt(channel.statistics.videoCount || 0),
+        };
+    } catch (error) {
+        console.error('Error fetching channel details:', error);
+        return null;
+    }
+};
+
+// Function to get all videos from a channel
+const getAllVideos = async (channelId) => {
+    let videos = [];
+    let nextPageToken = '';
+
+    try {
+        do {
+            let url = `${YOUTUBE_API_BASE}/search?part=snippet&channelId=${channelId}&maxResults=50&order=date&type=video&key=${YOUTUBE_API_KEY}&pageToken=${nextPageToken}`;
+            const response = await axios.get(url);
+
+            for (const item of response.data.items) {
+                videos.push({
+                    videoId: item.id.videoId,
+                    title: item.snippet.title,
+                    publishedAt: item.snippet.publishedAt,
+                    thumbnail: item.snippet.thumbnails.high.url,
+                });
+            }
+            nextPageToken = response.data.nextPageToken || '';
+        } while (nextPageToken);
+
+        return videos;
+    } catch (error) {
+        console.error('Error fetching videos:', error);
+        return [];
+    }
+};
+
+// Function to get video statistics
+const getVideoStats = async (videoIds) => {
+    let stats = [];
+
+    try {
+        for (let i = 0; i < videoIds.length; i += 50) {
+            let batch = videoIds.slice(i, i + 50);
+            let url = `${YOUTUBE_API_BASE}/videos?part=statistics&id=${batch.join(',')}&key=${YOUTUBE_API_KEY}`;
+            let response = await axios.get(url);
+
+            console.log("YouTube API Response:", JSON.stringify(response.data, null, 2)); // DEBUG
+
+            stats.push(...response.data.items.map((item) => ({
+                videoId: item.id,
+                views: parseInt(item.statistics.viewCount || 0),
+                likes: parseInt(item.statistics.likeCount || 0),
+            })));
+        }
+        return stats;
+    } catch (error) {
+        console.error('Error fetching video stats:', error);
+        return [];
+    }
+};
+
+// API route to get channel details
+router.get('/channel', async (req, res) => {
+    try {
+        const { search } = req.query;
+
+        if (!search) {
+            return res.status(400).json({ error: 'Search query is required' });
+        }
+
+        const channel = await getChannelDetails(search);
+        if (!channel) {
+            return res.status(404).json({ error: 'Channel not found' });
+        }
+
+        let videos = await getAllVideos(channel.channelId);
+
+        if (videos.length === 0) {
+            return res.status(404).json({ error: 'No videos found' });
+        }
+
+        let videoIds = videos.map((video) => video.videoId);
+        let stats = await getVideoStats(videoIds);
+
+        // Merge video data with statistics
+        videos = videos.map((video) => {
+            const stat = stats.find((s) => s.videoId === video.videoId) || {};
+            return {
+                ...video,
+                views: stat.views || 0,
+                likes: stat.likes || 0,
+            };
+        });
+
+        // Calculate total views and likes for videos
+        let totalViews = videos.reduce((acc, video) => acc + video.views, 0);
+        let totalLikes = videos.reduce((acc, video) => acc + video.likes, 0);
+
+        // Find max and min viewed videos
+        let maxViewedVideo = videos.reduce((max, video) => (video.views > max.views ? video : max), videos[0]);
+        let minViewedVideo = videos.reduce((min, video) => (video.views < min.views ? video : min), videos[0]);
+
+        // Find the fastest-growing video (assuming max likes/views ratio)
+        let fastestGrowingVideo = videos.reduce((best, video) => {
+            let growthRate = video.likes / (video.views || 1);
+            return growthRate > best.growthRate ? { ...video, growthRate } : best;
+        }, { growthRate: 0 });
+
+        return res.json({
+            channelDetails: channel,
+            totalVideos: videos.length,
+            totalViews,
+            totalLikes,
+            maxViewedVideo,
+            minViewedVideo,
+            fastestGrowingVideo,
+            videos,
+        });
+
+    } catch (error) {
+        console.error('API Error:', error);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+
+
+
 module.exports = router;
