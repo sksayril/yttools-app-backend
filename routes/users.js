@@ -1187,7 +1187,7 @@ const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 //       return res.status(500).json({ error: 'Internal server error' });
 //   }
 // });
-
+// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 const getGlobalRanking = async (channelId, country) => {
   try {
       // Replace with actual API or logic to get ranks
@@ -1202,98 +1202,235 @@ const getGlobalRanking = async (channelId, country) => {
   }
 };
 
-const getChannelAndVideosData = async (query) => {
-  try {
-      let url = `${YOUTUBE_API_BASE}/search?part=snippet&type=channel&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
-      const response = await axios.get(url);
+// const getChannelAndVideosData = async (query) => {
+//   try {
+//       let url = `${YOUTUBE_API_BASE}/search?part=snippet&type=channel&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
+//       const response = await axios.get(url);
 
-      if (!response.data.items.length) return null;
+//       if (!response.data.items.length) return null;
 
-      let channelId = response.data.items[0].id.channelId;
-      let channelUrl = `${YOUTUBE_API_BASE}/channels?part=snippet,statistics,brandingSettings&id=${channelId}&key=${YOUTUBE_API_KEY}`;
-      let videosUrl = `${YOUTUBE_API_BASE}/search?part=snippet&channelId=${channelId}&maxResults=50&order=date&type=video&key=${YOUTUBE_API_KEY}`;
+//       let channelId = response.data.items[0].id.channelId;
+//       let channelUrl = `${YOUTUBE_API_BASE}/channels?part=snippet,statistics,brandingSettings&id=${channelId}&key=${YOUTUBE_API_KEY}`;
+//       let videosUrl = `${YOUTUBE_API_BASE}/search?part=snippet&channelId=${channelId}&maxResults=50&order=date&type=video&key=${YOUTUBE_API_KEY}`;
 
-      let [channelResponse, videosResponse] = await Promise.all([axios.get(channelUrl), axios.get(videosUrl)]);
+//       let [channelResponse, videosResponse] = await Promise.all([axios.get(channelUrl), axios.get(videosUrl)]);
 
-      if (!channelResponse.data.items.length || !videosResponse.data.items.length) return null;
+//       if (!channelResponse.data.items.length || !videosResponse.data.items.length) return null;
 
-      let channel = channelResponse.data.items[0];
-      let country = channel.brandingSettings?.channel?.country || "Unknown";
-      let videos = videosResponse.data.items.map(item => ({
-          videoId: item.id.videoId,
-          title: item.snippet.title,
-          thumbnail: item.snippet.thumbnails.high.url
-      }));
+//       let channel = channelResponse.data.items[0];
+//       let country = channel.brandingSettings?.channel?.country || "Unknown";
+//       let videos = videosResponse.data.items.map(item => ({
+//           videoId: item.id.videoId,
+//           title: item.snippet.title,
+//           thumbnail: item.snippet.thumbnails.high.url
+//       }));
 
-      let videoIds = videos.map(video => video.videoId);
-      let statsUrl = `${YOUTUBE_API_BASE}/videos?part=statistics&id=${videoIds.join(',')}&key=${YOUTUBE_API_KEY}`;
-      let statsResponse = await axios.get(statsUrl);
+//       let videoIds = videos.map(video => video.videoId);
+//       let statsUrl = `${YOUTUBE_API_BASE}/videos?part=statistics&id=${videoIds.join(',')}&key=${YOUTUBE_API_KEY}`;
+//       let statsResponse = await axios.get(statsUrl);
 
-      let stats = statsResponse.data.items.map(item => ({
-          videoId: item.id,
-          views: parseInt(item.statistics.viewCount || 0),
-          likes: parseInt(item.statistics.likeCount || 0),
-          subscribersGained: parseInt(item.statistics.subscriberCount || 0)
-      }));
+//       let stats = statsResponse.data.items.map(item => ({
+//           videoId: item.id,
+//           views: parseInt(item.statistics.viewCount || 0),
+//           likes: parseInt(item.statistics.likeCount || 0),
+//           subscribersGained: parseInt(item.statistics.subscriberCount || 0)
+//       }));
 
-      videos = videos.map(video => {
-          const stat = stats.find(s => s.videoId === video.videoId) || {};
-          let minEarnings = (stat.views / 1000) * 0.25;
-          let maxEarnings = (stat.views / 1000) * 4.00;
-          return { ...video, views: stat.views || 0, likes: stat.likes || 0, subscribersGained: stat.subscribersGained || 0, minEarnings, maxEarnings };
-      });
+//       videos = videos.map(video => {
+//           const stat = stats.find(s => s.videoId === video.videoId) || {};
+//           let minEarnings = (stat.views / 1000) * 0.25;
+//           let maxEarnings = (stat.views / 1000) * 4.00;
+//           return { ...video, views: stat.views || 0, likes: stat.likes || 0, subscribersGained: stat.subscribersGained || 0, minEarnings, maxEarnings };
+//       });
 
-      let totalViews = videos.reduce((acc, video) => acc + video.views, 0);
-      let totalLikes = videos.reduce((acc, video) => acc + video.likes, 0);
-      let totalSubscribersGained = videos.reduce((acc, video) => acc + video.subscribersGained, 0);
-      let totalMinEarnings = videos.reduce((acc, video) => acc + video.minEarnings, 0);
-      let totalMaxEarnings = videos.reduce((acc, video) => acc + video.maxEarnings, 0);
+//       let totalViews = videos.reduce((acc, video) => acc + video.views, 0);
+//       let totalLikes = videos.reduce((acc, video) => acc + video.likes, 0);
+//       let totalSubscribersGained = videos.reduce((acc, video) => acc + video.subscribersGained, 0);
+//       let totalMinEarnings = videos.reduce((acc, video) => acc + video.minEarnings, 0);
+//       let totalMaxEarnings = videos.reduce((acc, video) => acc + video.maxEarnings, 0);
 
-      let ranking = await getGlobalRanking(channelId, country);
+//       let ranking = await getGlobalRanking(channelId, country);
 
-      return {
-          channel: {
-              channelId,
-              title: channel.snippet.title,
-              logo: channel.snippet.thumbnails.high.url,
-              country,
-              totalViews: parseInt(channel.statistics.viewCount || 0),
-              totalSubscribers: parseInt(channel.statistics.subscriberCount || 0),
-              estimatedMonthlyEarnings: `$${(channel.statistics.viewCount * 0.002).toFixed(2)} - $${(channel.statistics.viewCount * 0.005).toFixed(2)}`,
-              estimatedYearlyEarnings: `$${(channel.statistics.viewCount * 0.024).toFixed(2)} - $${(channel.statistics.viewCount * 0.06).toFixed(2)}`,
-              globalViewsRank: ranking.globalViewsRank,
-              globalSubscribersRank: ranking.globalSubscribersRank,
-              countryRank: ranking.countryRank
-          },
-          totalViews,
-          totalLikes,
-          totalSubscribersGained,
-          videos,
-          totalMinEarnings,
-          totalMaxEarnings
-      };
-  } catch (error) {
-      console.error('Error fetching channel and video data:', error);
-      return null;
-  }
+//       return {
+//           channel: {
+//               channelId,
+//               title: channel.snippet.title,
+//               logo: channel.snippet.thumbnails.high.url,
+//               country,
+//               totalViews: parseInt(channel.statistics.viewCount || 0),
+//               totalSubscribers: parseInt(channel.statistics.subscriberCount || 0),
+//               estimatedMonthlyEarnings: `$${(channel.statistics.viewCount * 0.002).toFixed(2)} - $${(channel.statistics.viewCount * 0.005).toFixed(2)}`,
+//               estimatedYearlyEarnings: `$${(channel.statistics.viewCount * 0.024).toFixed(2)} - $${(channel.statistics.viewCount * 0.06).toFixed(2)}`,
+//               globalViewsRank: ranking.globalViewsRank,
+//               globalSubscribersRank: ranking.globalSubscribersRank,
+//               countryRank: ranking.countryRank
+//           },
+//           totalViews,
+//           totalLikes,
+//           totalSubscribersGained,
+//           videos,
+//           totalMinEarnings,
+//           totalMaxEarnings
+//       };
+//   } catch (error) {
+//       console.error('Error fetching channel and video data:', error);
+//       return null;
+//   }
+// };
+
+// router.get('/channel', async (req, res) => {
+//   try {
+//       const { query } = req.query;
+//       if (!query) return res.status(400).json({ error: 'Channel query is required' });
+
+//       const data = await getChannelAndVideosData(query);
+//       if (!data) return res.status(404).json({ error: 'Channel or videos not found' });
+
+//       return res.json({
+//           message: 'Data fetched successfully',
+//           data
+//       });
+//   } catch (error) {
+//       console.error('API Error:', error);
+//       return res.status(500).json({ error: 'Internal server error' });
+//   }
+// });
+
+const extractChannelIdFromUrl = async (url) => {
+    try {
+        let channelId = null;
+        
+        if (url.includes("/channel/")) {
+            // Extract channel ID directly from URL
+            const match = url.match(/channel\/([^/?]+)/);
+            if (match) channelId = match[1];
+        } else if (url.includes("/@")) {
+            // Extract handle from the URL
+            const match = url.match(/\/@([^/?]+)/);
+            if (match) {
+                const handle = match[1];
+                // Fetch channel ID using YouTube API from handle
+                const response = await axios.get(`${YOUTUBE_API_BASE}/channels?part=id&forHandle=${handle}&key=${YOUTUBE_API_KEY}`);
+                if (response.data.items.length > 0) {
+                    channelId = response.data.items[0].id;
+                }
+            }
+        }
+
+        return channelId;
+    } catch (error) {
+        console.error("Error extracting channel ID:", error);
+        return null;
+    }
 };
 
+const getChannelAndVideosData = async (query) => {
+    try {
+        let channelId = null;
+
+        // If it's a URL, extract the channel ID
+        if (query.includes("youtube.com")) {
+            channelId = await extractChannelIdFromUrl(query);
+        } else {
+            // Search for the channel by name
+            const url = `${YOUTUBE_API_BASE}/search?part=snippet&type=channel&q=${encodeURIComponent(query)}&key=${YOUTUBE_API_KEY}`;
+            const response = await axios.get(url);
+            if (response.data.items.length) {
+                channelId = response.data.items[0].id.channelId;
+            }
+        }
+
+        if (!channelId) return null;
+
+        // Fetch channel and video data
+        let channelUrl = `${YOUTUBE_API_BASE}/channels?part=snippet,statistics,brandingSettings&id=${channelId}&key=${YOUTUBE_API_KEY}`;
+        let videosUrl = `${YOUTUBE_API_BASE}/search?part=snippet&channelId=${channelId}&maxResults=50&order=date&type=video&key=${YOUTUBE_API_KEY}`;
+
+        let [channelResponse, videosResponse] = await Promise.all([
+            axios.get(channelUrl),
+            axios.get(videosUrl)
+        ]);
+
+        if (!channelResponse.data.items.length || !videosResponse.data.items.length) return null;
+
+        let channel = channelResponse.data.items[0];
+        let country = channel.brandingSettings?.channel?.country || "Unknown";
+        let videos = videosResponse.data.items.map(item => ({
+            videoId: item.id.videoId,
+            title: item.snippet.title,
+            thumbnail: item.snippet.thumbnails.high.url
+        }));
+
+        let videoIds = videos.map(video => video.videoId);
+        let statsUrl = `${YOUTUBE_API_BASE}/videos?part=statistics&id=${videoIds.join(',')}&key=${YOUTUBE_API_KEY}`;
+        let statsResponse = await axios.get(statsUrl);
+
+        let stats = statsResponse.data.items.map(item => ({
+            videoId: item.id,
+            views: parseInt(item.statistics.viewCount || 0),
+            likes: parseInt(item.statistics.likeCount || 0),
+            subscribersGained: parseInt(item.statistics.subscriberCount || 0)
+        }));
+
+        videos = videos.map(video => {
+            const stat = stats.find(s => s.videoId === video.videoId) || {};
+            let minEarnings = (stat.views / 1000) * 0.25;
+            let maxEarnings = (stat.views / 1000) * 4.00;
+            return { ...video, views: stat.views || 0, likes: stat.likes || 0, subscribersGained: stat.subscribersGained || 0, minEarnings, maxEarnings };
+        });
+
+        let totalViews = videos.reduce((acc, video) => acc + video.views, 0);
+        let totalLikes = videos.reduce((acc, video) => acc + video.likes, 0);
+        let totalSubscribersGained = videos.reduce((acc, video) => acc + video.subscribersGained, 0);
+        let totalMinEarnings = videos.reduce((acc, video) => acc + video.minEarnings, 0);
+        let totalMaxEarnings = videos.reduce((acc, video) => acc + video.maxEarnings, 0);
+
+        let ranking = await getGlobalRanking(channelId, country);
+
+        return {
+            channel: {
+                channelId,
+                title: channel.snippet.title,
+                logo: channel.snippet.thumbnails.high.url,
+                country,
+                totalViews: parseInt(channel.statistics.viewCount || 0),
+                totalSubscribers: parseInt(channel.statistics.subscriberCount || 0),
+                estimatedMonthlyEarnings: `$${(channel.statistics.viewCount * 0.002).toFixed(2)} - $${(channel.statistics.viewCount * 0.005).toFixed(2)}`,
+                estimatedYearlyEarnings: `$${(channel.statistics.viewCount * 0.024).toFixed(2)} - $${(channel.statistics.viewCount * 0.06).toFixed(2)}`,
+                globalViewsRank: ranking.globalViewsRank,
+                globalSubscribersRank: ranking.globalSubscribersRank,
+                countryRank: ranking.countryRank
+            },
+            totalViews,
+            totalLikes,
+            totalSubscribersGained,
+            videos,
+            totalMinEarnings,
+            totalMaxEarnings
+        };
+    } catch (error) {
+        console.error('Error fetching channel and video data:', error);
+        return null;
+    }
+};
+
+// API Route
 router.get('/channel', async (req, res) => {
-  try {
-      const { query } = req.query;
-      if (!query) return res.status(400).json({ error: 'Channel query is required' });
+    try {
+        const { query } = req.query;
+        if (!query) return res.status(400).json({ error: 'Channel query is required' });
 
-      const data = await getChannelAndVideosData(query);
-      if (!data) return res.status(404).json({ error: 'Channel or videos not found' });
+        const data = await getChannelAndVideosData(query);
+        if (!data) return res.status(404).json({ error: 'Channel or videos not found' });
 
-      return res.json({
-          message: 'Data fetched successfully',
-          data
-      });
-  } catch (error) {
-      console.error('API Error:', error);
-      return res.status(500).json({ error: 'Internal server error' });
-  }
+        return res.json({
+            message: 'Data fetched successfully',
+            data
+        });
+    } catch (error) {
+        console.error('API Error:', error);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
 });
 
 
