@@ -371,11 +371,14 @@ const generateTagsAndKeywords = async (keywords) => {
   try {
     // Create a proper prompt for Gemini AI
     const promptText = `
-      You are an expert in YouTube SEO. Based on these keywords: ${keywords.join(", ")}.
-      Generate the top 10 most trending and relevant YouTube video tags.
-      Ensure they are optimized for YouTube search and video discovery.
-      Return the tags in JSON format as an array, without any extra text.
-    `;
+    You are an expert in YouTube SEO. Based on these keywords: ${keywords.join(", ")}.
+    Generate the top 10 most trending and relevant YouTube video tags.
+    Ensure they are optimized for YouTube search and video discovery.
+    The tags must not contain any sexual, harmful, or inappropriate content.
+    If generating safe tags is not possible, respond with: "I cannot generate this content."
+    Return the tags in JSON format as an array, without any extra text.
+  `;
+
 
     // Correct JSON format for Gemini API request
     const requestData = {
@@ -405,26 +408,50 @@ const generateTagsAndKeywords = async (keywords) => {
 };
 
 // API Endpoint to Generate Tags Using Gemini AI
+const prohibitedWords = [
+  "sex", "nipple", "porn", "naked", "explicit", "adult", "nsfw", "violence", "harm", "injury",
+  "death", "self-harm", "abuse", "suicide", "killing", "murder", "illegal", "drug", "weapon"
+];
+
+const containsProhibitedContent = (text) => {
+  return prohibitedWords.some((word) => text.toLowerCase().includes(word));
+};
+
 router.post("/generateAITags", async (req, res) => {
   try {
     const { keywords } = req.body;
 
     if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-      return res.status(400).json({ message: "Please provide an array of keywords" });
+      return res.status(400).json({ message: "Please provide a valid array of keywords" });
+    }
+
+    // Check if any keyword contains prohibited words
+    if (keywords.some(kw => containsProhibitedContent(kw))) {
+      return res.status(400).json({ message: "Request contains inappropriate keywords" });
     }
 
     const generatedTags = await generateTagsAndKeywords(keywords);
+
+    // Filter out generated tags containing prohibited content
+    const safeTags = generatedTags.filter(tag => !containsProhibitedContent(tag));
+
+    if (safeTags.length === 0) {
+      return res.status(400).json({ message: "AI-generated tags contained inappropriate content and were removed." });
+    }
+
     let data = [{
       keywords,
-      generatedTags
-    }]
+      generatedTags: safeTags
+    }];
+
     return res.status(200).json({
       message: "AI-generated tags and keywords",
       data
     });
+
   } catch (error) {
     console.error("Error generating AI tags:", error);
-    return res.status(500).json({ message: "Internal Server Error" });
+    return res.status(500).json({ message: "Something went wrong while generating tags" });
   }
 });
 
@@ -454,9 +481,13 @@ const generateViralTitles = async (keywords) => {
       - Be **highly clickable** and optimized for YouTube SEO.
       - Use relevant **emojis** to attract viewers.
       - Be no longer than 60 characters.
+      - **Must not contain any sexual, harmful, violent, or inappropriate content.**
+      
+      If generating safe titles is not possible, respond with: "I cannot generate this content."
 
       Return only the **3 viral video titles** as a JSON array.
     `;
+
 
     // Correct JSON format for Gemini API request
     const requestData = {
@@ -486,26 +517,53 @@ const generateViralTitles = async (keywords) => {
 };
 
 // API Endpoint to Generate Viral Titles Using Gemini AI
+const prohibitedWords2 = [
+  "sex", "nipple", "porn", "naked", "explicit", "adult", "nsfw", "violence", "harm", "injury",
+  "death", "self-harm", "abuse", "suicide", "killing", "murder", "illegal", "drug", "weapon",
+  "rape", "molestation", "prostitution", "incest", "torture", "assault", "kidnap", "terrorism",
+  "bomb", "explosion", "genocide", "massacre", "abduct", "trafficking", "extremism", "beheading",
+  "shooting", "execution", "suicidal", "overdose", "homicide", "cannibalism", "sadism", "snuff"
+];
+
+const containsProhibitedContent2 = (text) => {
+  return prohibitedWords2.some((word) => text.toLowerCase().includes(word));
+};
+
 router.post("/generateViralTitles", async (req, res) => {
   try {
     const { keywords } = req.body;
 
     if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-      return res.status(400).json({ message: "Please provide an array of keywords" });
+      return res.status(400).json({ message: "Please provide a valid array of keywords" });
+    }
+
+    // Check if any keyword contains prohibited words
+    if (keywords.some(kw => containsProhibitedContent2(kw))) {
+      return res.status(400).json({ message: "Request contains inappropriate keywords." });
     }
 
     const viralTitles = await generateViralTitles(keywords);
+
+    // Filter out generated titles containing prohibited content
+    const safeTitles = viralTitles.filter(title => !containsProhibitedContent(title));
+
+    if (safeTitles.length === 0) {
+      return res.status(400).json({ message: "AI-generated titles contained inappropriate content and were removed." });
+    }
+
     let data = [{
       keywords,
-      viralTitles
-    }]
+      viralTitles: safeTitles
+    }];
+
     return res.status(200).json({
       message: "AI-generated viral video titles",
       data
     });
+
   } catch (error) {
     console.error("Error generating AI titles:", error);
-    return res.status(500).json({ message: "Internal Server Error" });
+    return res.status(500).json({ message: "Something went wrong while generating titles" });
   }
 });
 
