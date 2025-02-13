@@ -89,6 +89,7 @@ router.post("/getVideoDetails", async (req, res) => {
 
 
 // API to fetch top 10 viral videos for a given keyword and region
+
 router.post("/getCompetitorVideos", async (req, res) => {
   try {
     const { searchQuery, regionCode } = req.body;
@@ -101,7 +102,7 @@ router.post("/getCompetitorVideos", async (req, res) => {
       return res.status(400).json({ message: "Region code is required (Example: 'US', 'IN', 'GB')." });
     }
 
-    // Search for top 10 viral videos based on region
+    // Search for top 10 viral videos
     const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=${encodeURIComponent(
       searchQuery
     )}&order=viewCount&type=video&regionCode=${regionCode}&key=${YOUTUBE_API_KEY}`;
@@ -113,14 +114,24 @@ router.post("/getCompetitorVideos", async (req, res) => {
       return res.status(404).json({ message: "No videos found for the specified region." });
     }
 
-    // Fetch detailed video stats for each video
+    // Fetch detailed video stats (including contentDetails)
     const videoIds = searchResults.map((video) => video.id.videoId).join(",");
-    const videoDetailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+    const videoDetailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
     const videoDetailsResponse = await axios.get(videoDetailsUrl);
     const videoDetails = videoDetailsResponse.data.items;
 
+    // Filter videos that are available in the given region
+    const filteredVideos = videoDetails.filter((video) => {
+      const restrictions = video.contentDetails?.regionRestriction;
+      return !restrictions || restrictions.allowed?.includes(regionCode);
+    });
+
+    if (filteredVideos.length === 0) {
+      return res.status(404).json({ message: `No videos are available for the region "${regionCode}".` });
+    }
+
     // Format the response
-    const videos = videoDetails.map((video) => {
+    const videos = filteredVideos.map((video) => {
       const { title, tags, thumbnails } = video.snippet;
       const { viewCount, likeCount, commentCount } = video.statistics || {};
 
@@ -136,19 +147,19 @@ router.post("/getCompetitorVideos", async (req, res) => {
           high: thumbnails.high.url,
         },
         keywords,
-        // tags: tags || [],
-        // statistics: {
-        //   views: viewCount || "N/A",
-        //   likes: likeCount || "N/A",
-        //   comments: commentCount || "N/A",
-        // },
+        statistics: {
+          views: viewCount || "N/A",
+          likes: likeCount || "N/A",
+          comments: commentCount || "N/A",
+        },
       };
     });
-    let data =[{videos}]
+
     return res.status(200).json({
-      message: `Top 10 videos for "${searchQuery}" in region "${regionCode}"`,
-      data
+      message: `Top ${videos.length} competitor videos for "${searchQuery}" in region "${regionCode}"`,
+      data: videos,
     });
+
   } catch (error) {
     console.error("Error fetching competitor videos:", error);
     return res.status(500).json({ message: "Internal Server Error" });
@@ -413,24 +424,77 @@ const prohibitedWords = [
   "death", "self-harm", "abuse", "suicide", "killing", "murder", "illegal", "drug", "weapon"
 ];
 
+// Function to check if a keyword contains prohibited content
 const containsProhibitedContent = (text) => {
   return prohibitedWords.some((word) => text.toLowerCase().includes(word));
 };
 
+// Function to generate AI-based tags using Google Gemini API
+const generateTagsAndKeywords1 = async (keywords, region) => {
+  try {
+    if (!GEMINI_API_KEY) {
+      throw new Error("Missing GEMINI_API_KEY. Please set it in environment variables.");
+    }
+
+    // Construct prompt for region-based AI-generated tags
+    const promptText = `
+      You are an expert in SEO and content optimization. 
+      Based on the following keywords: ${keywords.join(", ")}, generate **10 optimized tags**.
+
+      The tags should:
+      - **Be relevant to the given keywords**
+      - **Use a naming style based on the region: "${region}"**
+      - **Be written in English letters but reflect the linguistic style of the region**
+      - **Follow SEO best practices**
+      
+      Example:
+      - If the region is "India", modify the spelling or style to reflect Indian names.
+      - If the region is "China", ensure the tags sound Chinese but are in English letters.
+      - If the region is "Japan", make them resemble Japanese branding.
+      
+      Return the list **in plain text format**, with each tag on a new line.
+    `;
+
+    // API request to Gemini AI
+    const requestData = {
+      contents: [{ parts: [{ text: promptText }] }]
+    };
+
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${GEMINI_API_KEY}`,
+      requestData,
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    // Extract AI response
+    const aiResponse = response.data.candidates[0].content.parts[0].text.trim();
+
+    // Convert AI response into an array (splitting by new lines)
+    const generatedTags = aiResponse.split("\n").map(tag => tag.trim()).filter(tag => tag.length > 0);
+
+    return generatedTags.slice(0, 10); // Ensure only 10 results are returned
+  } catch (error) {
+    console.error("Error generating AI tags:", error.response?.data || error.message);
+    return ["Error generating AI tags"];
+  }
+};
+
+// API Endpoint: Generate AI-based Tags with Region-Specific Style
 router.post("/generateAITags", async (req, res) => {
   try {
-    const { keywords } = req.body;
+    const { keywords, region = "Global" } = req.body;
 
     if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
       return res.status(400).json({ message: "Please provide a valid array of keywords" });
     }
 
-    // Check if any keyword contains prohibited words
+    // Check if any input keyword contains prohibited words
     if (keywords.some(kw => containsProhibitedContent(kw))) {
       return res.status(400).json({ message: "Request contains inappropriate keywords" });
     }
 
-    const generatedTags = await generateTagsAndKeywords(keywords);
+    // Generate AI-based tags with regional customization
+    const generatedTags = await generateTagsAndKeywords1(keywords, region);
 
     // Filter out generated tags containing prohibited content
     const safeTags = generatedTags.filter(tag => !containsProhibitedContent(tag));
@@ -439,14 +503,13 @@ router.post("/generateAITags", async (req, res) => {
       return res.status(400).json({ message: "AI-generated tags contained inappropriate content and were removed." });
     }
 
-    let data = [{
-      keywords,
-      generatedTags: safeTags
-    }];
-
     return res.status(200).json({
       message: "AI-generated tags and keywords",
-      data
+      data: [{
+        keywords,
+        region,
+        generatedTags: safeTags
+      }]
     });
 
   } catch (error) {
@@ -471,52 +534,6 @@ const cleanAIResponseTitle = (text) => {
 };
 
 // Function to generate viral video titles with emojis using Google Gemini AI
-const generateViralTitles = async (keywords) => {
-  try {
-    // Create a prompt for Gemini AI
-    const promptText = `
-      You are an expert in YouTube video marketing. 
-      Based on the following keywords: ${keywords.join(", ")}, generate 3 highly engaging viral video titles.
-      Each title must:
-      - Be **highly clickable** and optimized for YouTube SEO.
-      - Use relevant **emojis** to attract viewers.
-      - Be no longer than 60 characters.
-      - **Must not contain any sexual, harmful, violent, or inappropriate content.**
-      
-      If generating safe titles is not possible, respond with: "I cannot generate this content."
-
-      Return only the **3 viral video titles** as a JSON array.
-    `;
-
-
-    // Correct JSON format for Gemini API request
-    const requestData = {
-      contents: [{ parts: [{ text: promptText }] }]
-    };
-
-    // Make request to Gemini 1.5 Pro API
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${GEMINI_API_KEY}`,
-      requestData,
-      { headers: { "Content-Type": "application/json" } }
-    );
-
-    // Extract AI response
-    const aiResponse = response.data.candidates[0].content.parts[0].text.trim();
-    console.log("Raw AI Response:", aiResponse); // Debugging
-
-    // Clean & Parse AI response
-    const viralTitles = cleanAIResponseTitle(aiResponse);
-
-    // Ensure only top 3 titles
-    return viralTitles.slice(0, 3);
-  } catch (error) {
-    console.error("Error fetching AI-generated titles:", error.response?.data || error.message);
-    return [];
-  }
-};
-
-// API Endpoint to Generate Viral Titles Using Gemini AI
 const prohibitedWords2 = [
   "sex", "nipple", "porn", "naked", "explicit", "adult", "nsfw", "violence", "harm", "injury",
   "death", "self-harm", "abuse", "suicide", "killing", "murder", "illegal", "drug", "weapon",
@@ -525,24 +542,82 @@ const prohibitedWords2 = [
   "shooting", "execution", "suicidal", "overdose", "homicide", "cannibalism", "sadism", "snuff"
 ];
 
-const containsProhibitedContent2 = (text) => {
+// Function to check if text contains prohibited content
+const containsProhibitedContent1 = (text) => {
   return prohibitedWords2.some((word) => text.toLowerCase().includes(word));
 };
 
-router.post("/generateViralTitles", async (req, res) => {
+// Function to generate viral video titles using Google Gemini AI
+const generateViralTitles = async (keywords, region) => {
   try {
-    const { keywords } = req.body;
-
-    if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-      return res.status(400).json({ message: "Please provide a valid array of keywords" });
+    if (!GEMINI_API_KEY) {
+      throw new Error("Missing GEMINI_API_KEY. Please set it in environment variables.");
     }
 
-    // Check if any keyword contains prohibited words
-    if (keywords.some(kw => containsProhibitedContent2(kw))) {
+    // Construct AI prompt for generating region-based viral titles
+    const promptText = `
+      You are an expert in YouTube video marketing. 
+      Based on the following keywords: ${keywords.join(", ")}, generate 3 highly engaging viral video titles.
+
+      Each title must:
+      - **Be highly clickable and optimized for YouTube SEO.**
+      - **Use relevant emojis** to attract viewers.
+      - **Be no longer than 60 characters.**
+      - **Follow the naming style of the region: "${region}".**
+      - **Be written in English letters but reflect the linguistic style of the region.**
+      - **Avoid any sexual, harmful, violent, or inappropriate content.**
+
+      If safe titles cannot be generated, respond with: "I cannot generate this content."
+
+      Return only the **3 viral video titles** as a JSON array.
+    `;
+
+    // API request to Gemini AI
+    const requestData = {
+      contents: [{ parts: [{ text: promptText }] }]
+    };
+
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${GEMINI_API_KEY}`,
+      requestData,
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    // Extract AI response
+
+    let aiResponse = response.data.candidates[0].content.parts[0].text.trim();
+
+    // Debugging
+
+    console.log("Raw AI Response:", aiResponse);
+    let cleandataai = cleanAIResponseTitle(aiResponse)
+    // console.log(cleandataai)
+    // Clean & Parse AI response
+    // const viralTitles = cleandataai.split("\n").map(title => title.trim()).filter(title => title.length > 0);
+    const viralTitles = cleandataai
+    return viralTitles.slice(0, 3); // Ensure only top 3 titles
+  } catch (error) {
+    console.error("Error fetching AI-generated titles:", error.response?.data || error.message);
+    return [];
+  }
+};
+
+// API Endpoint: Generate Viral Video Titles with Region-Specific Style
+router.post("/generateViralTitles", async (req, res) => {
+  try {
+    const { keywords, region = "Global" } = req.body;
+
+    if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+      return res.status(400).json({ message: "Please provide a valid array of keywords." });
+    }
+
+    // Check if any input keyword contains prohibited words
+    if (keywords.some(kw => containsProhibitedContent1(kw))) {
       return res.status(400).json({ message: "Request contains inappropriate keywords." });
     }
 
-    const viralTitles = await generateViralTitles(keywords);
+    // Generate AI-based viral titles with regional customization
+    const viralTitles = await generateViralTitles(keywords, region);
 
     // Filter out generated titles containing prohibited content
     const safeTitles = viralTitles.filter(title => !containsProhibitedContent(title));
@@ -551,14 +626,13 @@ router.post("/generateViralTitles", async (req, res) => {
       return res.status(400).json({ message: "AI-generated titles contained inappropriate content and were removed." });
     }
 
-    let data = [{
-      keywords,
-      viralTitles: safeTitles
-    }];
-
     return res.status(200).json({
       message: "AI-generated viral video titles",
-      data
+      data: [{
+        keywords,
+        region,
+        viralTitles: safeTitles
+      }]
     });
 
   } catch (error) {
@@ -793,7 +867,7 @@ const categoryData = {
   Animals: ["Dogs", "Cats", "Wildlife"],
   Travel: ["Mountains", "Beaches", "Cities"],
   SocialMedia: ["Influencer", "Memes", "Challenges"],
-  Food: ["Vegan", "Desserts", "StreetFood"]
+  Food: ["Vegan", "Desserts", "StreetFood"],
 };
 
 router.post("/getPopularHashtagsFromYouTube", async (req, res) => {
@@ -832,15 +906,26 @@ router.post("/getPopularHashtagsFromYouTube", async (req, res) => {
       // Extract video IDs
       const videoIds = searchResults.map((video) => video.id.videoId).join(",");
 
-      // Fetch video details (including tags and descriptions)
-      const videoDetailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+      // Fetch video details (including contentDetails for region filtering)
+      const videoDetailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
       const videoDetailsResponse = await axios.get(videoDetailsUrl);
       const videoDetails = videoDetailsResponse.data.items;
 
       let hashtagSet = new Set();
 
+      // Filter videos that are available in the given region
+      const filteredVideos = videoDetails.filter((video) => {
+        const restrictions = video.contentDetails?.regionRestriction;
+        return !restrictions || restrictions.allowed?.includes(regionCode);
+      });
+
+      if (filteredVideos.length === 0) {
+        categoryHashtags[subcategory] = ["No hashtags found for this region"];
+        continue;
+      }
+
       // Extract hashtags from video titles, descriptions, and tags
-      videoDetails.forEach((video) => {
+      filteredVideos.forEach((video) => {
         const { title, description, tags } = video.snippet;
 
         // Extract hashtags from title and description
@@ -857,18 +942,18 @@ router.post("/getPopularHashtagsFromYouTube", async (req, res) => {
       // Convert to array and limit to top 20 hashtags
       categoryHashtags[subcategory] = Array.from(hashtagSet).slice(0, 20);
     }
-    let data = [{category,
-      hashtags: categoryHashtags,}]
+
+    let data = [{ category, region: regionCode, hashtags: categoryHashtags }];
+
     return res.status(200).json({
-      message:"Data Successfully Fetch",
-      data
+      message: `Successfully fetched popular hashtags for category "${category}" in region "${regionCode}"`,
+      data,
     });
   } catch (error) {
     console.error("Error fetching hashtags:", error);
     return res.status(500).json({ message: "Internal Server Error." });
   }
 });
-
 
 //Trending Videos
 
@@ -1055,17 +1140,29 @@ router.post("/calculateEarnings", async (req, res) => {
 
 
 
-const generateChannelNames = async (videoDetails) => {
+const generateChannelNames = async (videoDetails, region = "Global") => {
   try {
-    // Create a prompt for Gemini AI to generate 10 YouTube channel name ideas
+    if (!GEMINI_API_KEY) {
+      throw new Error("Missing GEMINI_API_KEY. Please set it in environment variables.");
+    }
+
+    // AI prompt for generating names
     const promptText = `
       You are an expert in YouTube branding and content creation.
       Based on the following short video details: "${videoDetails}",
       generate a **list of 10 creative and unique YouTube channel name ideas**.
-      Ensure the names are:
+
+      The channel names should be:
       - **Catchy, easy to remember, and SEO-friendly.**
       - **Relevant to the content theme and target audience.**
       - **Diverse in style (e.g., playful, professional, trendy, niche-specific).**
+      - **Inspired by the culture and linguistic style of the region: "${region}".**
+      - **Written in English letters but reflecting the naming style of the region.**
+      
+      If the region is "China", names should have a Chinese-inspired style but be written in English.
+      If the region is "Japan", names should have a Japanese-style rhythm but in English letters.
+      If the region is "India", names should sound like Indian brands but in English.
+      If the region is unspecified or "Global", generate universally appealing names.
 
       Return the list **in plain text format**, with each name on a new line.
     `;
@@ -1075,7 +1172,6 @@ const generateChannelNames = async (videoDetails) => {
       contents: [{ parts: [{ text: promptText }] }]
     };
 
-    // Make request to Gemini 1.5 Pro API
     const response = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${GEMINI_API_KEY}`,
       requestData,
@@ -1086,7 +1182,10 @@ const generateChannelNames = async (videoDetails) => {
     const aiResponse = response.data.candidates[0].content.parts[0].text.trim();
 
     // Convert AI response into an array (splitting by new lines)
-    const channelNames = aiResponse.split("\n").map(name => name.trim()).filter(name => name.length > 0);
+    const channelNames = aiResponse
+      .split("\n")
+      .map(name => name.trim())
+      .filter(name => name.length > 0);
 
     // Ensure only 10 results are returned
     return channelNames.slice(0, 10);
@@ -1099,18 +1198,21 @@ const generateChannelNames = async (videoDetails) => {
 // API Endpoint to Generate Top 10 YouTube Channel Names
 router.post("/generateChannelNames", async (req, res) => {
   try {
-    const { videoDetails } = req.body;
+    const { videoDetails, region } = req.body;
 
-    if (!videoDetails || typeof videoDetails !== "string" || videoDetails.length === 0) {
+    if (!videoDetails || typeof videoDetails !== "string" || videoDetails.trim().length === 0) {
       return res.status(400).json({ message: "Please provide short details about the video." });
     }
 
-    const generatedChannelNames = await generateChannelNames(videoDetails);
-    let data =[{videoDetails,
-      generatedChannelNames}]
+    const generatedChannelNames = await generateChannelNames(videoDetails, region);
+
     return res.status(200).json({
       message: "AI-generated YouTube channel name ideas",
-      data
+      data: [{
+        videoDetails,
+        region: region || "Global",
+        generatedChannelNames
+      }]
     });
   } catch (error) {
     console.error("Error generating AI channel names:", error);
