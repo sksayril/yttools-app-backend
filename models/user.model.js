@@ -8,5 +8,13 @@ const userSchema = new mongoose.Schema({
   PetName: { type: String, required: true },   // Security Question 1
   FatherName: { type: String, required: true }, // Security Question 2
   UserCreationTime: { type: Date, default: Date.now }, // Account creation time
+  userType: { type: String, enum: ['creator', 'normal'], default: 'normal' },
+  walletBalance: { type: Number, default: 0 },
+  coins: { type: Number, default: 0 },
+  upiId: { type: String, default: '' },
+  subscriptionStatus: { type: Boolean, default: false },
+  subscriptionExpiry: { type: Date },
+  subscriptionId: { type: String },
 });
-  module.exports = mongoose.model("User", userSchema);
+
+module.exports = mongoose.model("User", userSchema);
